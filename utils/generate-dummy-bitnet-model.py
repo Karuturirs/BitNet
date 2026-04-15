@@ -330,7 +330,7 @@ class Model(ABC):
         toktypes: list[int] = []
 
         from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, fix_mistral_regex=True)
         vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))
         assert max(tokenizer.vocab.values()) < vocab_size
 
@@ -377,7 +377,7 @@ class Model(ABC):
         # NOTE: if you get an error here, you need to update the convert-hf-to-gguf-update.py script
         #       or pull the latest version of the model from Huggingface
         #       don't edit the hashes manually!
-        if chkhsh == "0ef9807a4087ebef797fc749390439009c3b9eda9ad1a097abbe738f486c01e5":
+        if chkhsh == "0ef9807a4087ebef797fc749390439009c3b9eda9ad1a097abbe738f486c01e5" or chkhsh == "caf58839932819bd7ffa63fd28184e06b743a18de5571d3b84930ecccb8a500f":
             # ref: https://huggingface.co/meta-llama/Meta-Llama-3-8B
             res = "llama-bpe"
         if chkhsh == "049ecf7629871e3041641907f3de7c733e4dbfdc736f57d882ba0b0845599754":
@@ -773,9 +773,9 @@ def preprocess_weights_tl2(
     return weight
     
 
-@Model.register("BitnetForCausalLM")
+@Model.register("BitnetForCausalLM", "BitNetForCausalLM")
 class BitnetModel(Model):
-    model_arch = gguf.MODEL_ARCH.BITNET
+    model_arch = gguf.MODEL_ARCH.BITNET_B158
     params: str = ""
     
     def set_params(self, params: str):
@@ -791,7 +791,13 @@ class BitnetModel(Model):
         
 
     def set_vocab(self):
-        self._set_vocab_sentencepiece()
+        try:
+            self._set_vocab_sentencepiece()
+        except FileNotFoundError:
+            try:
+                self._set_vocab_llama_hf()
+            except (FileNotFoundError, TypeError):
+                self._set_vocab_gpt2()
         
     def set_gguf_parameters(self):
         super().set_gguf_parameters()

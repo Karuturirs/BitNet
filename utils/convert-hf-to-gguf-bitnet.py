@@ -258,7 +258,7 @@ class Model(ABC):
         toktypes: list[int] = []
 
         from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
+        tokenizer = AutoTokenizer.from_pretrained(self.dir_model, fix_mistral_regex=True)
         vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))
         assert max(tokenizer.vocab.values()) < vocab_size
 
@@ -274,7 +274,7 @@ class Model(ABC):
             elif reverse_vocab[i] in added_vocab:
                 # We need to manually encode and decode the added tokens in case special characters
                 # used for `\n` / `\t` have been manually added in the added tokens
-                encoded_decoded_token = tokenizer.decode(tokenizer.encode(reverse_vocab[i]))
+                encoded_decoded_token = tokenizer.decode(tokenizer.encode(reverse_vocab[i], add_special_tokens=False))
                 tokens.append(encoded_decoded_token)
                 if tokenizer.added_tokens_decoder[i].special:
                     toktypes.append(gguf.TokenType.CONTROL)
@@ -307,7 +307,7 @@ class Model(ABC):
         # NOTE: if you get an error here, you need to update the convert-hf-to-gguf-update.py script
         #       or pull the latest version of the model from Huggingface
         #       don't edit the hashes manually!
-        if chkhsh == "0ef9807a4087ebef797fc749390439009c3b9eda9ad1a097abbe738f486c01e5":
+        if chkhsh == "0ef9807a4087ebef797fc749390439009c3b9eda9ad1a097abbe738f486c01e5" or chkhsh == "caf58839932819bd7ffa63fd28184e06b743a18de5571d3b84930ecccb8a500f":
             # ref: https://huggingface.co/meta-llama/Meta-Llama-3-8B
             res = "llama-bpe"
         if chkhsh == "049ecf7629871e3041641907f3de7c733e4dbfdc736f57d882ba0b0845599754":
@@ -735,8 +735,8 @@ class LlamaModel(Model):
                 shift = torch.tensor([0, 2, 4, 6], dtype=torch.uint8).reshape((4, *(1 for _ in range(len(origin_shape)))))
                 data_torch = data_torch.unsqueeze(0).expand((4, *origin_shape)) >> shift
                 data_torch = data_torch & 3
-                data_torch = (data_torch.float() - 1).reshape((origin_shape[0] * 4, *origin_shape[1:]))
-                data_torch = data_torch / scale_map[name.replace(".weight", "")].float()
+                data_torch = (data_torch.float() - 1).permute(1, 0, 2).reshape((origin_shape[0] * 4, *origin_shape[1:]))
+                data_torch = data_torch * scale_map[name.replace(".weight", "")].float()
 
             # use the first number-like part of the tensor name as the block id
             bid = None
@@ -952,12 +952,18 @@ class LlamaModel(Model):
                 raise ValueError(f"Unprocessed experts: {experts}")
 
 
-@Model.register("BitnetForCausalLM")
+@Model.register("BitnetForCausalLM", "BitNetForCausalLM")
 class BitnetModel(Model):
-    model_arch = gguf.MODEL_ARCH.BITNET
+    model_arch = gguf.MODEL_ARCH.BITNET_B158
 
     def set_vocab(self):
-        self._set_vocab_sentencepiece()
+        try:
+            self._set_vocab_sentencepiece()
+        except FileNotFoundError:
+            try:
+                self._set_vocab_llama_hf()
+            except (FileNotFoundError, TypeError):
+                self._set_vocab_gpt2()
         
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
@@ -986,7 +992,17 @@ class BitnetModel(Model):
     def write_tensors(self):
         max_name_len = max(len(s) for _, s in self.tensor_map.mapping.values()) + len(".weight,")
 
+        scale_map = dict()
+
         for name, data_torch in self.get_tensors():
+            if name.endswith(("weight_scale")):
+                data_torch = data_torch.to(torch.float32)
+                name = name.replace(".weight_scale", "")
+                scale_map[name] = data_torch
+
+        for name, data_torch in self.get_tensors():
+            if name.endswith(("weight_scale")):
+                continue
             # we don't need these
             if name.endswith((".attention.masked_bias", ".attention.bias", ".rotary_emb.inv_freq")):
                 continue
@@ -996,6 +1012,15 @@ class BitnetModel(Model):
             # convert any unsupported data types to float32
             if data_torch.dtype not in (torch.float16, torch.float32):
                 data_torch = data_torch.to(torch.float32)
+
+            if name.replace(".weight", "") in scale_map:
+                data_torch = data_torch.to(torch.uint8)
+                origin_shape = data_torch.shape
+                shift = torch.tensor([0, 2, 4, 6], dtype=torch.uint8).reshape((4, *(1 for _ in range(len(origin_shape)))))
+                data_torch = data_torch.unsqueeze(0).expand((4, *origin_shape)) >> shift
+                data_torch = data_torch & 3
+                data_torch = (data_torch.float() - 1).permute(1, 0, 2).reshape((origin_shape[0] * 4, *origin_shape[1:]))
+                data_torch = data_torch * scale_map[name.replace(".weight", "")].float()
 
             # use the first number-like part of the tensor name as the block id
             bid = None

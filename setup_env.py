@@ -87,7 +87,11 @@ def system_info():
 def get_model_name():
     if args.hf_repo:
         return SUPPORTED_HF_MODELS[args.hf_repo]["model_name"]
-    return os.path.basename(os.path.normpath(args.model_dir))
+    # If model_dir ends with our target model name, return it explicitly
+    dir_name = os.path.basename(os.path.normpath(args.model_dir))
+    if "BitNet-b1.58-2B-4T" in dir_name:
+        return "BitNet-b1.58-2B-4T"
+    return dir_name
 
 def run_command(command, shell=False, log_step=None):
     """Run a system command and ensure it succeeds."""
@@ -124,7 +128,16 @@ def prepare_model():
     else:
         logging.info(f"Loading model from directory {model_dir}.")
     gguf_path = os.path.join(model_dir, "ggml-model-" + quant_type + ".gguf")
+    # Also check for the specific i2s-bitnet name used by the helper script
+    if not os.path.exists(gguf_path):
+        alt_path = os.path.join(model_dir, "ggml-model-i2s-bitnet.gguf")
+        if os.path.exists(alt_path):
+            gguf_path = alt_path
+
     if not os.path.exists(gguf_path) or os.path.getsize(gguf_path) == 0:
+        if not os.path.exists(os.path.join(model_dir, "config.json")):
+            logging.error(f"GGUF model not found at {gguf_path} and config.json missing in {model_dir}. Cannot convert.")
+            sys.exit(1)
         logging.info(f"Converting HF model to GGUF format...")
         if quant_type.startswith("tl"):
             run_command([sys.executable, "utils/convert-hf-to-gguf-bitnet.py", model_dir, "--outtype", quant_type, "--quant-embd"], log_step="convert_to_tl")

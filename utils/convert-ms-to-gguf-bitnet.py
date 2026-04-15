@@ -601,6 +601,7 @@ class LlamaHfVocab(Vocab):
             base_path,
             cache_dir=base_path,
             local_files_only=True,
+            fix_mistral_regex=True,
         )
         assert self.tokenizer.is_fast  # assume tokenizer.json is used
 
