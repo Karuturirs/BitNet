@@ -71,7 +71,7 @@ show_o = st.sidebar.toggle("Show Model of Ollama", value=True)
 
 st.sidebar.header("Global Settings")
 threads_val = st.sidebar.number_input("Threads (BitNet)", min_value=1, max_value=32, value=6)
-common_prompt = st.sidebar.text_area("Common Prompt", value="Classify if the text is a customer complaint. Text: Package arrived on time.")
+common_prompt = st.sidebar.text_area("Common Prompt", value="Classify if the text is a customer complaint. Answer only Yes or No. Text: Package arrived on time.")
 
 models = get_models()
 ollama_models = get_ollama_models() if show_o else []
@@ -93,7 +93,7 @@ for i, slot in enumerate(active_slots):
         if slot == "A":
             st.header("Model A (BitNet)")
             config['ma'] = st.selectbox("Select Model", models, key="sel_a")
-            config['na'] = st.number_input("N-Predict", value=5, key="n_a")
+            config['na'] = st.number_input("N-Predict", value=2, key="n_a")
             config['ta'] = st.slider("Temperature", 0.0, 1.0, 0.2, key="temp_a")
             if st.button("Run A"):
                 with st.status("Running A...") as s:
@@ -109,7 +109,7 @@ for i, slot in enumerate(active_slots):
         elif slot == "B":
             st.header("Model B (BitNet)")
             config['mb'] = st.selectbox("Select Model", models, index=min(1, len(models)-1), key="sel_b")
-            config['nb'] = st.number_input("N-Predict", value=5, key="n_b")
+            config['nb'] = st.number_input("N-Predict", value=2, key="n_b")
             config['tb'] = st.slider("Temperature", 0.0, 1.0, 0.2, key="temp_b")
             if st.button("Run B"):
                 with st.status("Running B...") as s:
@@ -129,7 +129,7 @@ for i, slot in enumerate(active_slots):
                 config['mo'] = None
             else:
                 config['mo'] = st.selectbox("Select Model", ollama_models, key="sel_o")
-                config['no'] = st.number_input("N-Predict", value=5, key="n_o")
+                config['no'] = st.number_input("N-Predict", value=2, key="n_o")
                 config['to'] = st.slider("Temperature", 0.0, 1.0, 0.2, key="temp_o")
                 if st.button("Run Ollama"):
                     with st.status("Running Ollama...") as s:
@@ -147,7 +147,10 @@ for i, slot in enumerate(active_slots):
 if len(active_slots) > 1:
     if st.button("🚀 Run All Active Models"):
         run_cols = st.columns(len(active_slots))
-        placeholders = [c.empty() for c in run_cols]
+        placeholders = []
+        for col in run_cols:
+            with col.container(height=130):
+                placeholders.append(st.empty())
         queues = []
         threads = []
         
