@@ -30,6 +30,7 @@ def run_inference():
         '-ngl', '0',
         '-c', str(args.ctx_size),
         '--temp', str(args.temperature),
+        '--repeat-penalty', str(args.repeat_penalty),
         "-b", "1",
     ]
     if args.conversation:
@@ -50,6 +51,7 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--threads", type=int, help="Number of threads to use", required=False, default=2)
     parser.add_argument("-c", "--ctx-size", type=int, help="Size of the prompt context", required=False, default=2048)
     parser.add_argument("-temp", "--temperature", type=float, help="Temperature, a hyperparameter that controls the randomness of the generated text", required=False, default=0.8)
+    parser.add_argument("-r", "--repeat-penalty", type=float, help="Repeat penalty", required=False, default=1.1)
     parser.add_argument("-cnv", "--conversation", action='store_true', help="Whether to enable chat mode or not (for instruct models.)")
 
     args = parser.parse_args()
